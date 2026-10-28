@@ -1,61 +1,47 @@
-
-const VALID_NODE_ENVS = ['development', 'test', 'production'];
-
 function validateEnv(env = process.env) {
   const errors = [];
-
   const nodeEnv = env.NODE_ENV || 'development';
-
-  if (!VALID_NODE_ENVS.includes(nodeEnv)) {
-    errors.push('NODE_ENV must be development, test, or production');
-  }
-
-  const port = env.PORT || '3000';
+  const port = env.PORT ?? '3000';
   const portNumber = Number(port);
 
-  if (
-    !/^\d+$/.test(String(port)) ||
-    !Number.isInteger(portNumber) ||
-    portNumber < 1 ||
-    portNumber > 65535
-  ) {
-    errors.push('PORT must be an integer between 1 and 65535');
-  }
+  if (!['development', 'test', 'production'].includes(nodeEnv))
+    errors.push('Invalid NODE_ENV');
 
-  if (!env.MONGO_URI || !/^mongodb(\+srv)?:\/\//.test(env.MONGO_URI)) {
-    errors.push('MONGO_URI must be a MongoDB connection URI');
-  }
+  if (!/^\d+$/.test(String(port)) || !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535)
+    errors.push('Invalid PORT');
+
+  if (!/^mongodb(\+srv)?:\/\/.+/.test(env.MONGO_URI || ''))
+    errors.push('Invalid MONGO_URI');
 
   if (nodeEnv === 'production') {
-    if (
-      !env.JWT_SECRET ||
-      env.JWT_SECRET.length < 32 ||
-      env.JWT_SECRET === 'dev-only-secret-change-me'
-    ) {
-      errors.push('Production JWT_SECRET must be at least 32 characters and not a default secret');
+    const secret = env.JWT_SECRET || '';
+
+    if (secret.length < 32 ||
+        ['dev-only-secret-change-me', 'change-this-to-a-long-random-string'].includes(secret))
+      errors.push('Insecure JWT_SECRET');
+
+    for (const key of ['BASE_URL', 'FRONTEND_URL']) {
+      if (key === 'FRONTEND_URL' && !env[key]) continue;
+      try {
+        if (new URL(env[key]).protocol !== 'https:') throw new Error();
+      } catch {
+        errors.push(key + ' must use HTTPS');
+      }
     }
 
-    if (!env.BASE_URL || !env.BASE_URL.startsWith('https://')) {
-      errors.push('Production BASE_URL must use HTTPS');
-    }
-
-    if (!env.CORS_ORIGIN || env.CORS_ORIGIN === '*') {
-      errors.push('Production CORS_ORIGIN must specify an allowed origin');
-    }
+    if (!env.CORS_ORIGIN || env.CORS_ORIGIN === '*')
+      errors.push('Invalid CORS_ORIGIN');
   }
 
-  if (errors.length > 0) {
-    throw new Error(
-      'Invalid environment configuration:\n' +
-      errors.map(error => `- ${error}`).join('\n')
-    );
-  }
+  if (errors.length)
+    throw new Error('Configuration validation failed:\n' + errors.join('\n'));
 
   return {
     NODE_ENV: nodeEnv,
     PORT: portNumber,
     MONGO_URI: env.MONGO_URI,
     BASE_URL: env.BASE_URL || 'http://localhost:3000',
+    FRONTEND_URL: env.FRONTEND_URL || env.BASE_URL || 'http://localhost:3000',
     CORS_ORIGIN: env.CORS_ORIGIN || '*'
   };
 }
